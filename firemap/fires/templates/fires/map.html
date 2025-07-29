@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <title>Türkiye Yangın İzleme</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css"/>
+    <style>
+        body { background: #f4f7fb; }
+        #map { height: 68vh; border-radius: 18px; box-shadow: 0 4px 24px #0001; }
+        .stats-bar { margin: 2em 0 1.5em 0; }
+        .stats-card {
+            background: #c82333;
+            color: #fff;
+            border-radius: 16px;
+            margin: 0 6px;
+            padding: 1.2em 1.2em 0.5em 1.2em;
+            text-align: center;
+            min-width: 170px;
+            box-shadow: 0 2px 10px #d3393930;
+        }
+        .stats-card span { font-size: 1.12em; font-weight: 500; color: #ffc107; }
+        .stats-card h2 { font-size: 2.5em; font-weight: bold; margin: 0.15em 0 0.35em 0;}
+        .filter-panel {background: #fff; border-radius: 16px; box-shadow: 0 2px 12px #a1b0d733; margin-bottom: 2em; padding:1.5em;}
+        .leaflet-popup-content {font-size:1.05em;}
+        .legend-dot {width: 18px; height: 18px; border-radius: 50%; display: inline-block; margin-right: 6px;}
+        .toggle-btn {border-radius:18px;}
+        .stats-bar .stats-card {
+    background: #c82333;
+    color: #fff;
+    border-radius: 16px;
+    min-width: 220px;   /* Burayı artırdık */
+    max-width: 260px;   /* Max genişlik ekledik */
+    margin: 0 8px;
+    padding: 1.2em 1.2em 0.5em 1.2em;
+    text-align: center;
+    height: 120px; /* Kutu yüksekliğini artırdık */
+    display: flex;
+    flex-direction: column;
+    justify-content: center; /* Dikey ortalama */
+    align-items: center;     /* Yatay ortalama */
+    box-shadow: 0 2px 10px #d3393930;
+}
+.stats-card span {
+    font-size: 1.12em;
+    font-weight: 500;
+    color: #ffc107;
+    white-space: nowrap;
+}
+.stats-card h2 {
+    font-size: 2.2em;
+    font-weight: bold;
+    margin: 0.15em 0 0.20em 0;
+    word-break: break-all;
+}
+.stats-card div {
+    font-size: 1.05em;
+    word-break: break-word;
+}
+    </style>
+</head>
+<body>
+    <!-- İstatistik Kutuları -->
+     <div class="container mt-4 mb-2">
+    <div class="row">
+        <div class="col-lg-10 mx-auto text-center">
+            <h1 class="fw-bold display-5" style="color:#c82333;">
+                <i class="fa-solid fa-fire-flame-curved fa-xl me-2" style="color:#ff8800;"></i>
+                Türkiye Yangın İzleme Platformu
+            </h1>
+           
+        </div>
+    </div>
+</div>
+    <div class="container-fluid stats-bar">
+        <div class="row justify-content-center g-2">
+            <div class="col-lg-2 col-6">
+                <div class="stats-card" id="stat-total">
+                    <span>Toplam Yangın</span>
+                    <h2 id="stat-total-count">-</h2>
+                    <div id="stat-total-range">Son 24 Saat</div>
+                </div>
+            </div>
+            <div class="col-lg-2 col-6">
+                <div class="stats-card" id="stat-last">
+                    <span>En Son Yangın</span>
+                    <h2 id="stat-last-when">-</h2>
+                    <div id="stat-last-place"></div>
+                </div>
+            </div>
+            <div class="col-lg-2 col-6">
+                <div class="stats-card" id="stat-max">
+                    <span>En Büyük Yangın (FRP)</span>
+                    <h2 id="stat-max-frp">-</h2>
+                    <div id="stat-max-place"></div>
+                </div>
+            </div>
+            <div class="col-lg-2 col-6">
+                <div class="stats-card" id="stat-active">
+                    <span>En Aktif İl</span>
+                    <h2 id="stat-active-city">-</h2>
+                    <div id="stat-active-count"></div>
+                </div>
+            </div>
+            
+        </div>
+    </div>
+    <!-- Filtre Paneli -->
+    <div class="container mb-2">
+        <div class="filter-panel row align-items-center gx-2 gy-2">
+            <div class="col-lg-2 col-6">
+                <label class="form-label mb-1">Min. FRP</label>
+                <input type="number" class="form-control" id="filter-frp" min="0" step="0.1" placeholder="örn: 2.5">
+            </div>
+            <div class="col-lg-2 col-6">
+                <label class="form-label mb-1">Zaman Aralığı</label>
+                <select class="form-select" id="filter-date-range">
+                    <option value="1">Son 24 Saat</option>
+                    <option value="2">Son 2 Gün</option>
+                    <option value="5">Son 5 Gün</option>
+                    <option value="10">Son 10 Gün</option>
+                </select>
+            </div>
+            <div class="col-lg-2 col-6">
+                <label class="form-label mb-1">Gece/Gündüz</label>
+                <select class="form-select" id="filter-daynight">
+                    <option value="">Hepsi</option>
+                    <option value="D">Gündüz</option>
+                    <option value="N">Gece</option>
+                </select>
+            </div>
+            <div class="col-lg-2 col-6">
+                <label class="form-label mb-1">Güven</label>
+                <select class="form-select" id="filter-confidence">
+                    <option value="">Hepsi</option>
+                    <option value="n">Düşük</option>
+                    <option value="l">Orta</option>
+                    <option value="h">Yüksek</option>
+                </select>
+            </div>
+            <!-- İstersen şehir ekleyebilirsin, il ismine göre -->
+            <div class="col-lg-2 col-6">
+                <button class="btn btn-primary w-100 mt-3" id="filter-btn"><i class="fa-solid fa-filter"></i> Filtrele</button>
+            </div>
+            <div class="col-lg-2 col-6">
+                <button class="btn btn-outline-secondary w-100 mt-3" id="reset-btn"><i class="fa-solid fa-rotate-left"></i> Temizle</button>
+            </div>
+        </div>
+    </div>
+    <!-- Yangın Haritası Başlık -->
+    <div class="container">
+        <h3 class="fw-bold mt-3 mb-2" style="color:#343a40;">Yangın Haritası</h3>
+        <div class="d-flex mb-2">
+            <button class="btn btn-outline-dark btn-sm ms-auto toggle-btn" id="toggle-heatmap">
+                <i class="fa-solid fa-fire-flame-curved"></i> Yoğunluk Haritası
+            </button>
+        </div>
+        <div id="map"></div>
+        <div class="text-center mt-2">
+            <div class="bg-white py-2 rounded shadow-sm d-inline-block px-3">
+                <span class="legend-dot" style="background:#d9534f;"></span>Gündüz 
+                <span class="legend-dot" style="background:#007bff;"></span>Gece 
+            </div>
+        </div>
+        <footer class="text-center text-muted mt-4 mb-2 small">Veri kaynağı: NASA FIRMS | OpenStreetMap & Leaflet</footer>
+    </div>
+    <div class="container mt-5">
+    <h3 class="fw-bold mb-4" style="color:#01ffef; border-bottom: 1.5px solid #ffbe0b;">Grafik Analizleri</h3>
+    <div class="row g-3">
+    <div class="col-md-4">
+        <canvas id="frpDistChart" height="270"></canvas>
+    </div>
+    <div class="col-md-4">
+        <canvas id="hourDistChart" height="270"></canvas>
+    </div>
+    <div class="col-md-4">
+        <canvas id="confidenceChart" height="270"></canvas>
+    </div>
+    <div class="col-md-6">
+        <canvas id="cityChart" height="270"></canvas>
+    </div>
+    <div class="col-md-6">
+        <canvas id="frpTempChart" height="270"></canvas>
+    </div>
+</div>
+
+</div>
+    <!-- Leaflet ve Script -->
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- Leaflet Heatmap eklentisi (opsiyonel) -->
+    <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
+    <script>
+        let fireMarkers = [];
+        let allFires = [];
+        let map = L.map('map').setView([39.0, 35.0], 6);
+        let heatLayer = null;
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19}).addTo(map);
+
+        // Tarih karşılaştırma fonksiyonu (gün olarak, saat dikkate alınmaz!)
+        function dateDiffInDays(a, b) {
+            let aParts = a.split('-');
+            let bParts = b.split('-');
+            let aDate = new Date(Date.UTC(aParts[0], aParts[1]-1, aParts[2]));
+            let bDate = new Date(Date.UTC(bParts[0], bParts[1]-1, bParts[2]));
+            let diffTime = bDate - aDate;
+            return diffTime / (1000 * 60 * 60 * 24);
+        }
+
+        // Veriyi çek ve göster
+        function loadFireData() {
+            fetch('/api/firepoints/')
+                .then(response => response.json())
+                .then(data => {
+                    allFires = data;
+                    showMarkers(data);
+                    updateStats(data);
+                });
+        }
+
+        // Markerları göster
+        function showMarkers(data) {
+            // Öncekileri kaldır
+            fireMarkers.forEach(m => map.removeLayer(m));
+            fireMarkers = [];
+            if (heatLayer) { map.removeLayer(heatLayer); heatLayer = null; }
+
+            data.forEach(pt => {
+                const color = pt.daynight === "D" ? "#d9534f" : "#007bff";
+                const marker = L.circleMarker([pt.lat, pt.lon], {
+                    radius: 8,
+                    fillColor: color,
+                    color: "#333",
+                    weight: 1,
+                    fillOpacity: 0.82
+                }).addTo(map);
+                marker.bindPopup(`
+                    <div>
+                        <strong><i class="fa-solid fa-fire"></i> Tarih:</strong> ${pt.acq_date} <br>
+                        <strong>Güven:</strong> ${pt.confidence.toUpperCase()} <br>
+                        <strong>FRP:</strong> ${pt.frp} <br>
+                        <strong>Gece/Gündüz:</strong> ${pt.daynight === "D" ? "Gündüz" : "Gece"}
+                    </div>
+                `);
+                fireMarkers.push(marker);
+            });
+        }
+
+        // Yoğunluk (heatmap) katmanını aç/kapat
+        document.getElementById('toggle-heatmap').onclick = function() {
+            if (heatLayer) {
+                map.removeLayer(heatLayer);
+                heatLayer = null;
+                showMarkers(filteredFires || allFires);
+            } else {
+                let pts = (filteredFires || allFires).map(f => [f.lat, f.lon, f.frp/10.0]);
+                heatLayer = L.heatLayer(pts, {radius: 18, blur: 22, maxZoom: 12}).addTo(map);
+                fireMarkers.forEach(m => map.removeLayer(m));
+            }
+        };
+
+        // Filtre fonksiyonu
+        let filteredFires = null;
+        function getCity(lat, lon) {
+        return fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&accept-language=tr`)
+          .then(r => r.json())
+          .then(data => {
+              let address = data.address || {};
+              return address.city || address.town || address.village || address.state || "-";
+          })
+          .catch(() => "-");
+    }
+
+    // Toplu il istatistiği bul (ör: ilk 50 noktadan)
+    async function getActiveCityStats(data) {
+        let ilList = [];
+        let N = Math.min(50, data.length);  // Çok nokta varsa, ilk 50 tanesinden bul
+
+        for (let i = 0; i < N; i++) {
+            let city = await getCity(data[i].lat, data[i].lon);
+            ilList.push(city);
+            await new Promise(r => setTimeout(r, 1200)); // 1.2 sn bekle (ban yememek için)
+        }
+
+        // En çok tekrar eden il
+        let freq = {};
+        ilList.forEach(il => {
+            freq[il] = (freq[il] || 0) + 1;
+        });
+        let sorted = Object.entries(freq).sort((a,b)=>b[1]-a[1]);
+        let topCity = sorted.length ? sorted[0][0] : "-";
+        let topCount = sorted.length ? sorted[0][1] : 0;
+        document.getElementById("stat-active-city").textContent = topCity.toUpperCase();
+        document.getElementById("stat-active-count").textContent = `(${topCount} yangın)`;
+    }
+
+    // updateStats fonksiyonu içinde sadece en aktif şehir için eski kodu kaldır:
+    function updateStats(data) {
+        document.getElementById("stat-total-count").textContent = data.length;
+        let dateRange = document.getElementById('filter-date-range').options[document.getElementById('filter-date-range').selectedIndex].text;
+        document.getElementById("stat-total-range").textContent = dateRange;
+
+        if (!data.length) {
+            document.getElementById("stat-last-when").textContent = '-';
+            document.getElementById("stat-last-place").textContent = '';
+            document.getElementById("stat-max-frp").textContent = '-';
+            document.getElementById("stat-max-place").textContent = '';
+            document.getElementById("stat-active-city").textContent = '-';
+            document.getElementById("stat-active-count").textContent = '';
+            document.getElementById("stat-avg").textContent = '-';
+            return;
+        }
+        // En son yangın
+        let last = data.reduce((a, b) => a.acq_date > b.acq_date ? a : b);
+        document.getElementById("stat-last-when").textContent = last.acq_date;
+        document.getElementById("stat-last-place").textContent = "";
+
+        // En büyük yangın (FRP)
+        let max = data.reduce((a, b) => (+a.frp > +b.frp) ? a : b);
+        document.getElementById("stat-max-frp").textContent = max.frp;
+        document.getElementById("stat-max-place").textContent = "";
+
+        // En aktif şehir kısmını başlat
+        document.getElementById("stat-active-city").textContent = "BURSA";
+        document.getElementById("stat-active-count").textContent = "";
+        getActiveCityStats(data);
+
+        // Ortalama FRP ve Bright
+        let avgFRP = (data.reduce((a,b)=>a+parseFloat(b.frp),0)/data.length).toFixed(2);
+        let avgBright = (data.reduce((a,b)=>a+parseFloat(b.bright_ti4||0),0)/data.length).toFixed(2);
+        document.getElementById("stat-avg").textContent = `${avgFRP} / ${avgBright}`;
+        updateCharts(data);
+    }
+    function updateCharts(data) {
+    // FRP Dağılımı (histogram gibi)
+    let frpBins = [0,2,5,10,20,50,100];
+    let frpCounts = [0,0,0,0,0,0];
+    data.forEach(f => {
+        let frp = parseFloat(f.frp);
+        for (let i = 0; i < frpBins.length-1; i++) {
+            if (frp >= frpBins[i] && frp < frpBins[i+1]) { frpCounts[i]++; break; }
+            if (frp >= frpBins[frpBins.length-1]) { frpCounts[frpCounts.length-1]++; break; }
+        }
+    });
+
+    let frpChart = new Chart(document.getElementById('frpDistChart').getContext('2d'), {
+        type: 'bar',
+        data: {
+            labels: ['0-2','2-5','5-10','10-20','20-50','50+'],
+            datasets: [{
+                label: 'Yangın Gücü (FRP) Dağılımı',
+                data: frpCounts,
+                backgroundColor: '#4370f7'
+            }]
+        },
+        options: {
+            plugins: { legend: { display:false } },
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: { x: { ticks:{color:'#fff'} }, y:{ticks:{color:'#fff'}} }
+        }
+    });
+
+    // Saat Bazında Yangın Dağılımı
+    let hours = Array.from({length:24},(_,i)=>i);
+    let hourCounts = Array(24).fill(0);
+    data.forEach(f=>{
+        let saat = f.acq_time.length > 2 ? parseInt(f.acq_time.slice(0, -2)) : 0;
+        if (!isNaN(saat) && saat>=0 && saat<24) hourCounts[saat]++;
+    });
+    let hourChart = new Chart(document.getElementById('hourDistChart').getContext('2d'), {
+        type: 'line',
+        data: {
+            labels: hours.map(h=>h.toString().padStart(2,'0')+":00"),
+            datasets: [{
+                label: 'Saat Bazında Dağılım',
+                data: hourCounts,
+                borderColor: '#e44e7a',
+                backgroundColor: 'rgba(228,78,122,0.3)'
+            }]
+        },
+        options: {
+            plugins: { legend: { display:false } },
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: { x: { ticks:{color:'#fff'} }, y:{ticks:{color:'#fff'}} }
+        }
+    });
+
+    // Güven Dağılımı
+    let confLabels = ['Düşük','Orta','Yüksek'];
+    let confKeys = ['n','l','h'];
+    let confCounts = [0,0,0];
+    data.forEach(f=>{
+        let idx = confKeys.indexOf(f.confidence.toLowerCase());
+        if (idx>=0) confCounts[idx]++;
+    });
+    let confidenceChart = new Chart(document.getElementById('confidenceChart').getContext('2d'), {
+        type: 'pie',
+        data: {
+            labels: confLabels,
+            datasets: [{
+                data: confCounts,
+                backgroundColor: ['#1E90FF','#21d983','#f7c73e']
+            }]
+        },
+        options: {
+            plugins: { legend: { labels:{color:'#fff'} } },
+            responsive: true,
+            maintainAspectRatio: false
+        }
+    });
+
+    // Bölgelere göre sayı (il/ilçe: reverse geocode yoksa gruplama basic yapılır)
+    let cityCount = {};
+    data.forEach(f=>{
+        let key = `${parseFloat(f.lat).toFixed(1)},${parseFloat(f.lon).toFixed(1)}`;
+        cityCount[key] = (cityCount[key]||0) + 1;
+    });
+    let cityLabels = Object.keys(cityCount);
+    let cityValues = Object.values(cityCount);
+    let cityChart = new Chart(document.getElementById('cityChart').getContext('2d'), {
+        type: 'bar',
+        data: {
+            labels: cityLabels,
+            datasets: [{
+                label: 'Bölgelere Göre Yangın',
+                data: cityValues,
+                backgroundColor: '#f94505'
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            plugins: { legend: { display:false } },
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: { x: { ticks:{color:'#fff'} }, y:{ticks:{color:'#fff'}} }
+        }
+    });
+
+    // FRP-Parlaklık İlişkisi
+    let frpTempChart = new Chart(document.getElementById('frpTempChart').getContext('2d'), {
+        type: 'scatter',
+        data: {
+            datasets: [{
+                label: 'FRP - Bright_Ti4',
+                data: data.map(f=>({x:parseFloat(f.frp), y:parseFloat(f.bright_ti4)})),
+                backgroundColor: '#FFD700'
+            }]
+        },
+        options: {
+            plugins: { legend: { labels:{color:'#fff'} } },
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: { title:{display:true, text:'FRP'}, ticks:{color:'#fff'}, grid:{color:'#444'} },
+                y: { title:{display:true, text:'Bright_Ti4'}, ticks:{color:'#fff'}, grid:{color:'#444'} }
+            }
+        }
+    });
+}
+
+        // İlk yükleme
+        window.onload = function() {
+            loadFireData();
+        }
+    </script>
+</body>
+</html>
